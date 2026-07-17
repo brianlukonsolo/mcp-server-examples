@@ -1,0 +1,39 @@
+services:
+  remote-basic:
+    build: .
+    command: python 02-remote-basic/server.py
+    restart: unless-stopped
+    ports:
+      - "8102:8102"
+
+  remote-auth:
+    build: .
+    command: python 03-remote-auth/server.py
+    restart: unless-stopped
+    environment:
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:?set MCP_AUTH_TOKEN in .env}
+    ports:
+      - "8103:8103"
+
+  tool-features:
+    build: .
+    command: python 04-tool-features/server.py
+    restart: unless-stopped
+    ports:
+      - "8104:8104"
+
+  task-manager:
+    build: .
+    command: python 05-task-manager/server.py
+    restart: unless-stopped
+    ports:
+      - "8105:8105"
+
+  secure-gateway:
+    build: .
+    command: python 06-secure-gateway/server.py
+    restart: unless-stopped
+    environment:
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:?set MCP_AUTH_TOKEN in .env}
+    ports:
+      - "8106:8106"
