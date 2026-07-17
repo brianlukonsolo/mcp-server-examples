@@ -20,6 +20,23 @@ the transports those clients speak: **stdio** for local servers and
 
 Work through them in order — each README explains the new concepts it adds.
 
+## The client side
+
+The [`clients/`](clients/) folder mirrors the same progression from the
+consumer's perspective — culminating in a **Claude-powered agent** that
+connects to any of these servers and drives the tools itself:
+
+| # | Client | What it teaches |
+|---|--------|-----------------|
+| 01 | stdio client | Launch a server subprocess; initialize → list → call |
+| 02 | HTTP client | Remote connections; resources and prompts |
+| 03 | auth client | Bearer-token headers; handling rejection |
+| 04 | advanced client | Live progress bars + server log streaming |
+| 05 | interactive CLI | A generic inspector for any MCP URL |
+| 06 | **Claude agent** | The full agentic loop: Claude plans and calls your tools |
+
+See [clients/README.md](clients/README.md).
+
 ## Quick start
 
 ### Run one example directly
