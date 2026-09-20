@@ -2,13 +2,20 @@
 
 Transactional stock with all-or-nothing multi-item reservations, idempotency keys,
 explicit states and an append-only application audit trail. It prevents
-overselling under concurrent tool calls. Export MCP_AUTH_TOKEN, then use separate
-terminals:
+overselling under concurrent tool calls.
+
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
 
 ```bash
-python 09-inventory-reservations/server.py
-python clients/08-inventory-client.py
+docker compose up -d --build inventory-reservations
+docker compose exec inventory-reservations python clients/08-inventory-client.py
 ```
+
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
 
 The demo creates a unique SKU, receives stock, retries a reservation and releases
 it. It intentionally leaves sample stock and audit records in the test instance.
@@ -48,8 +55,8 @@ reserve three units successfully.
 
 SKUs use uppercase letters, digits, underscores and hyphens. Quantities are strict
 integers from 1 to 1,000,000; reservations allow 1–50 distinct SKUs. Inventory and
-audit tools support keyset pagination. Data lives in `DATA_DIR/inventory.db`,
-persisted in a dedicated Compose volume.
+audit tools support keyset pagination. Compose persists `/app/data/inventory.db`
+in a dedicated named volume.
 
 This is a single-tenant example, not a payment service. Reservations do not expire
 automatically; callers explicitly confirm or release them. Idempotency and audit

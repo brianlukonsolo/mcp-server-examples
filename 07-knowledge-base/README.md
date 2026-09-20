@@ -2,12 +2,18 @@
 
 Combines SQLite FTS5 search, immutable revisions, resource templates and
 optimistic concurrency. This is lexical search, without an embedding model.
-Export MCP_AUTH_TOKEN (see the root guide), then use separate terminals:
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
 
 ```bash
-python 07-knowledge-base/server.py
-python clients/05-interactive-cli.py http://localhost:8107/mcp
+docker compose up -d --build knowledge-base
+docker compose exec knowledge-base python clients/05-interactive-cli.py http://localhost:8107/mcp
 ```
+
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
 
 Paste these commands into the interactive client:
 
@@ -30,6 +36,6 @@ FTS term and returns ranked snippets. `list_documents` pages through metadata.
 `answer_with_sources` is a prompt asking clients to cite slug and version.
 
 Limits: 200-character titles, 100,000-character bodies and 20-word search queries.
-Data lives in `DATA_DIR/knowledge.db`, persisted by Compose. Revision history is
+Compose persists `/app/data/knowledge.db` in its named volume. Revision history is
 retained indefinitely. This example does not implement retention policies,
 per-document permissions, or semantic similarity search.

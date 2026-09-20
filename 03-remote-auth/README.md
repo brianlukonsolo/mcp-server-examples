@@ -14,31 +14,35 @@ present `Authorization: Bearer <token>`.
 - **Fail-safe startup** — token shorter than 32 characters → the process exits instead of
   serving unauthenticated. Secure by default beats secure by memo.
 
-## Run
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
 
 ```bash
-export MCP_AUTH_TOKEN=$(openssl rand -hex 24)
-python server.py            # or: docker compose up remote-auth (token from .env)
+docker compose up -d --build remote-auth
+docker compose exec remote-auth python clients/03-auth-client.py
 ```
+
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
 
 ## Connect
 
+Use the token you configured in `.env` for an external client:
+
 ```bash
 claude mcp add --transport http remote-auth http://localhost:8103/mcp \
-  --header "Authorization: Bearer $MCP_AUTH_TOKEN"
+  --header "Authorization: Bearer <token-from-.env>"
 ```
 
 For remote hosting and bearer-header client compatibility, see the [root guide](../README.md).
 
-## Verify it's actually locked
+## Verify authentication
 
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8103/mcp   # 401
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8103/mcp \
-  -H "Authorization: Bearer $MCP_AUTH_TOKEN" \
-  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'   # 200
-```
+The container client command above first makes a request without credentials and
+requires HTTP 401, then connects with the inherited bearer token and calls the
+protected tools. The public `/health` probe remains available without a token.
 
 ## Limits of this scheme
 
