@@ -19,19 +19,26 @@ pattern applies to any upstream service (swap the fetches, keep the shell).
   and re-raised as messages the model can act on ("try again shortly"), rather
   than raw tracebacks.
 
-## Run
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
 
 ```bash
-export MCP_AUTH_TOKEN=$(openssl rand -hex 24)
-python server.py            # -> http://localhost:8106/mcp
-curl http://localhost:8106/health    # no auth needed -> {"status": "ok"}
+docker compose up -d --build secure-gateway
+docker compose exec secure-gateway python clients/05-interactive-cli.py http://localhost:8106/mcp
 ```
+
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
 
 ## Connect
 
+Use the token configured in `.env` for an external client:
+
 ```bash
 claude mcp add --transport http secure-gateway http://localhost:8106/mcp \
-  --header "Authorization: Bearer $MCP_AUTH_TOKEN"
+  --header "Authorization: Bearer <token-from-.env>"
 ```
 
 Then: *"What's the weekend weather in London vs Lisbon? Recommend one for a

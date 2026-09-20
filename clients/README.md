@@ -1,8 +1,32 @@
 # Remote MCP clients
 
-Start the matching server first. Every client uses Streamable HTTP; none starts a
-server subprocess. All accept MCP_AUTH_TOKEN. Numbered demo clients use MCP_URL to
-override endpoints; the generic CLI takes its URL as a positional argument.
+Run the bundled clients inside the matching Compose service. They connect over
+Streamable HTTP and inherit its `MCP_AUTH_TOKEN`; no host Python installation is
+needed. Set up `.env` using the [Docker quick start](../README.md#start-with-docker).
+All commands below run from the repository root.
+
+## Run a client with Docker
+
+```bash
+docker compose up -d --build hello-world
+docker compose exec hello-world python clients/01-hello-client.py
+```
+
+Other examples use the same pattern:
+
+```bash
+docker compose up -d --build remote-basic remote-auth tool-features workflow-engine inventory-reservations
+docker compose exec remote-basic python clients/02-http-client.py
+docker compose exec remote-auth python clients/03-auth-client.py
+docker compose exec tool-features python clients/04-advanced-client.py
+docker compose exec workflow-engine python clients/07-workflow-client.py
+docker compose exec inventory-reservations python clients/08-inventory-client.py
+```
+
+The workflow and inventory clients write demonstration data; use test instances.
+Inventory retains sample stock and audit records after the demo.
+
+## Client reference
 
 | Client | Server | Teaches |
 |---|---|---|
@@ -15,45 +39,37 @@ override endpoints; the generic CLI takes its URL as a positional argument.
 | [07-workflow-client.py](07-workflow-client.py) | 08, port 8108 | Checkpoints, failure and retry |
 | [08-inventory-client.py](08-inventory-client.py) | 09, port 8109 | Idempotent reservations |
 
-Install root requirements.txt for every client except the optional Claude agent:
-
-```bash
-python -m pip install -r clients/requirements.txt
-```
-
-That command installs runtime dependencies plus the Anthropic SDK.
+The optional Claude agent has a separate dependency and credential setup in
+[MANUAL.md](../MANUAL.md#optional-claude-agent); it is not included in the default
+server image's installed dependencies.
 
 ## Generic inspector
 
 ```bash
-python clients/05-interactive-cli.py http://localhost:8102/mcp --list
-python clients/05-interactive-cli.py http://localhost:8102/mcp --call roll_dice --args '{"count": 3}'
-python clients/05-interactive-cli.py http://localhost:8108/mcp
+docker compose up -d --build remote-basic
+docker compose exec remote-basic python clients/05-interactive-cli.py http://localhost:8102/mcp --list
+docker compose exec remote-basic python clients/05-interactive-cli.py http://localhost:8102/mcp
 ```
 
-Interactive commands: `<tool-name> {JSON-object}`, `list`, `quit`. Non-object JSON
-is rejected. One-shot tool errors return a failing exit status. Export
-MCP_AUTH_TOKEN for protected servers; --token is also supported but exposes the
-value in the process command line.
+In interactive mode, enter `<tool-name> {JSON-object}`, `list`, or `quit`. Example:
 
-connection.py owns and closes an httpx.AsyncClient and passes it to the SDK's
-streamable_http_client. Bearer headers belong on that HTTP client. Read timeouts
-allow up to five minutes for streamed tool responses.
-
-## Optional Claude agent
-
-Set ANTHROPIC_API_KEY and ANTHROPIC_MODEL in your shell. Choose a model ID available
-in your account; no model name or adaptive-thinking capability is assumed.
-
-```bash
-python clients/06-claude-agent.py "What's the weather in London?"
+```text
+roll_dice {"count": 3}
 ```
 
-The tool runner receives discovered tools and invokes them while answering. The
-loop is limited to ten iterations and 4,096 output tokens per model request;
-this is a request limit, not a guaranteed spend cap. Calls use your API account
-and can perform connected tools' mutations. Use a test instance for writable
-examples. Deterministic tests never make paid model calls.
+Non-object JSON is rejected. One-shot tool errors return a failing exit status.
+The generic CLI takes the URL as a positional argument. Numbered clients accept
+`MCP_URL` for an alternative endpoint. When using `docker compose exec`, localhost
+refers to that service's container, so the commands above run each client inside
+its matching server container.
 
-Bare clients and servers do not load .env. See the [root guide](../README.md) for
-PowerShell/Bash setup and remote hosting requirements.
+The token is already in the container environment; no `--token` argument is
+needed. Clients on your host or another machine need the same token and the
+published or public URL; see [manual client setup](../MANUAL.md#run-clients-on-the-host).
+
+## Implementation notes
+
+`connection.py` owns and closes an `httpx.AsyncClient` and passes it to the SDK's
+`streamable_http_client`. Bearer headers belong on that HTTP client. Read timeouts
+allow up to five minutes for streamed tool responses. Every client initializes
+its MCP session before discovering or calling tools.

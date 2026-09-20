@@ -1,4 +1,4 @@
-# 02 — Tools, resources and prompts
+# 02 â€” Tools, resources and prompts
 
 This example adds MCP's other primitives to an HTTP server:
 
@@ -6,15 +6,21 @@ This example adds MCP's other primitives to an HTTP server:
 - `info://server`: a read-only resource.
 - `brainstorm(topic)`: a reusable prompt template.
 
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
+
 ```bash
-python 02-remote-basic/server.py
-# Another terminal:
-python clients/02-http-client.py
+docker compose up -d --build remote-basic
+docker compose exec remote-basic python clients/02-http-client.py
 ```
+
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
 
 The endpoint is `http://localhost:8102/mcp`. Requests are stateless at the transport
 layer; clients still initialize their MCP session before listing or calling tools.
 
-Authentication is optional for local exploration. The shared runtime enables it
-when `MCP_AUTH_TOKEN` is set; production requires a token. See the [root guide](../README.md)
-for host validation, HTTPS and client compatibility rather than tunneling an open service.
+Compose runs this example with authentication enabled. See the [root guide](../README.md)
+for HTTPS, host validation and client compatibility.

@@ -2,12 +2,18 @@
 
 A directed acyclic graph (DAG) executor demonstrating graph validation,
 idempotent creation, durable checkpoints, retries, cancellation and HTTP progress.
-Export MCP_AUTH_TOKEN, then use separate terminals:
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
 
 ```bash
-python 08-workflow-engine/server.py
-python clients/07-workflow-client.py
+docker compose up -d --build workflow-engine
+docker compose exec workflow-engine python clients/07-workflow-client.py
 ```
+
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
 
 The client filters negatives, removes duplicates, deliberately fails a step once,
 retries, then sums the results. Earlier steps stay at one attempt; the retried
@@ -70,5 +76,5 @@ Workers do not execute arbitrary code, network calls or shell commands. External
 side effects would need an outbox and downstream idempotency; a database
 transaction alone cannot make a remote operation exactly-once.
 
-State lives in `DATA_DIR/workflows.db`, persisted by Compose. A single SQLite
+Compose persists `/app/data/workflows.db` in its named volume. A single SQLite
 database is appropriate for this bounded example, not a distributed worker fleet.

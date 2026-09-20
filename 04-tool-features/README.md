@@ -22,16 +22,23 @@ the free Open-Meteo weather API (no key required) plus some local tools.
 - **Clear errors** — validate early, raise `ValueError` with a message the
   model can act on.
 
-## Run
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
 
 ```bash
-python server.py            # -> http://localhost:8104/mcp
+docker compose up -d --build tool-features
+docker compose exec tool-features python clients/04-advanced-client.py
 ```
+
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
 
 ## Try it
 
-Connect (`claude mcp add --transport http tool-features http://localhost:8104/mcp`)
-and ask:
+Connect an MCP client to `http://localhost:8104/mcp` with the bearer token from
+`.env`, then ask:
 
 > *"What's the weather looking like in Manchester for the next 5 days?"*
 > (watch it chain find_city → get_weather)

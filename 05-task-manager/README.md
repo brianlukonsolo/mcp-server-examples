@@ -2,7 +2,7 @@
 
 The first example that's an actual *application*: a to-do list that persists
 in SQLite, driven entirely by the AI. Ask Claude to plan your week and watch
-it add, complete, and complete tasks.
+it add, list, complete and delete tasks.
 
 ## Concepts introduced
 
@@ -18,14 +18,21 @@ it add, complete, and complete tasks.
 - **A dynamic resource** — `tasks://all` renders the current list as text so
   a user/model can pull up to 500 tasks into context in one read.
 
-## Run
+## Run with Docker
+
+Set up `.env` once using the [Docker quick start](../README.md#start-with-docker).
+Then run these commands from the repository root:
 
 ```bash
-python server.py            # -> http://localhost:8105/mcp
+docker compose up -d --build task-manager
+docker compose exec task-manager python clients/05-interactive-cli.py http://localhost:8105/mcp
 ```
 
-The database file is created next to the script (override with `TASKS_DB`).
-Compose persists the database in the `task-manager-data` named volume.
+The client connects over HTTP and inherits the container's authentication token.
+For a host Python setup, see [MANUAL.md](../MANUAL.md).
+
+The database is `/app/data/tasks.db`, persisted in the `task-manager-data`
+named volume.
 
 ## Try it
 
