@@ -14,15 +14,16 @@ Examples:
 import argparse
 import asyncio
 import json
+import os
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from connection import remote_transport
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Generic MCP client CLI")
     p.add_argument("url", help="MCP endpoint, e.g. http://localhost:8102/mcp")
-    p.add_argument("--token", help="Bearer token for authenticated servers")
+    p.add_argument("--token", default=os.getenv("MCP_AUTH_TOKEN"), help="Bearer token for authenticated servers")
     p.add_argument("--list", action="store_true", help="List tools and exit")
     p.add_argument("--call", metavar="TOOL", help="Call one tool and exit")
     p.add_argument("--args", default="{}", help="JSON arguments for --call")
@@ -46,7 +47,7 @@ async def repl(session: ClientSession, tools):
     print("\nInteractive mode. Commands: <tool> {json-args} | list | quit")
     while True:
         try:
-            line = input("mcp> ").strip()
+            line = (await asyncio.to_thread(input, "mcp> ")).strip()
         except (EOFError, KeyboardInterrupt):
             break
         if not line:
@@ -59,7 +60,11 @@ async def repl(session: ClientSession, tools):
         name, _, raw_args = line.partition(" ")
         try:
             arguments = json.loads(raw_args) if raw_args.strip() else {}
+            if not isinstance(arguments, dict):
+                raise ValueError("Tool arguments must be a JSON object")
             result = await session.call_tool(name, arguments)
+            if result.isError:
+                print("Tool returned an error:")
             for block in result.content:
                 if block.type == "text":
                     print(block.text)
@@ -71,7 +76,7 @@ async def main():
     opts = parse_args()
     headers = {"Authorization": f"Bearer {opts.token}"} if opts.token else None
 
-    async with streamablehttp_client(opts.url, headers=headers) as (read, write, _):
+    async with remote_transport(opts.url, headers=headers) as (read, write, _):
         async with ClientSession(read, write) as session:
             init = await session.initialize()
             print(f"Connected to: {init.serverInfo.name} v{init.serverInfo.version}")
@@ -80,10 +85,15 @@ async def main():
             if opts.list:
                 print_tools(tools)
             elif opts.call:
-                result = await session.call_tool(opts.call, json.loads(opts.args))
+                arguments = json.loads(opts.args)
+                if not isinstance(arguments, dict):
+                    raise ValueError("Tool arguments must be a JSON object")
+                result = await session.call_tool(opts.call, arguments)
                 for block in result.content:
                     if block.type == "text":
                         print(block.text)
+                if result.isError:
+                    raise SystemExit(1)
             else:
                 print_tools(tools)
                 await repl(session, tools)

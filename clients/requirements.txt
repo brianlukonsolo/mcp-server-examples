@@ -1,0 +1,3 @@
+-r ../requirements.txt
+# Optional: required only for the Claude agent example.
+anthropic[mcp]==0.117.0

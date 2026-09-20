@@ -1,77 +1,59 @@
-# MCP Client Examples
+# Remote MCP clients
 
-The other side of the protocol: programs that *connect to* MCP servers. Same
-graded approach as the servers — each client pairs with one of the example
-servers, so start the matching server first (or `docker compose up -d` for all
-of them).
+Start the matching server first. Every client uses Streamable HTTP; none starts a
+server subprocess. All accept MCP_AUTH_TOKEN. Numbered demo clients use MCP_URL to
+override endpoints; the generic CLI takes its URL as a positional argument.
 
-## The learning path
+| Client | Server | Teaches |
+|---|---|---|
+| [01-hello-client.py](01-hello-client.py) | 01, port 8101 | Initialize, discover, call |
+| [02-http-client.py](02-http-client.py) | 02, port 8102 | Tools, resources, prompts |
+| [03-auth-client.py](03-auth-client.py) | 03, port 8103 | Verify an actual 401, then authenticate |
+| [04-advanced-client.py](04-advanced-client.py) | 04, port 8104 | Streaming progress and logs |
+| [05-interactive-cli.py](05-interactive-cli.py) | Any | Discovery, one-shot calls, REPL |
+| [06-claude-agent.py](06-claude-agent.py) | 04 by default | Optional model-driven tool loop |
+| [07-workflow-client.py](07-workflow-client.py) | 08, port 8108 | Checkpoints, failure and retry |
+| [08-inventory-client.py](08-inventory-client.py) | 09, port 8109 | Idempotent reservations |
 
-| # | Client | Pairs with server | What it teaches |
-|---|--------|-------------------|-----------------|
-| 01 | [01-stdio-client.py](01-stdio-client.py) | 01-hello-world | Spawning a stdio server yourself: initialize → list_tools → call_tool |
-| 02 | [02-http-client.py](02-http-client.py) | 02-remote-basic | Connecting over Streamable HTTP; using resources and prompts, not just tools |
-| 03 | [03-auth-client.py](03-auth-client.py) | 03-remote-auth | Sending bearer-token headers; what rejection looks like |
-| 04 | [04-advanced-client.py](04-advanced-client.py) | 04-tool-features | Live progress bars and server log messages during long tool calls |
-| 05 | [05-interactive-cli.py](05-interactive-cli.py) | any server | A generic inspector: list/call tools on any MCP URL, one-shot or REPL |
-| 06 | [06-claude-agent.py](06-claude-agent.py) | 04 (or any) | **Claude drives the tools**: the full agentic loop via the Anthropic SDK's tool runner |
-
-## Setup
+Install root requirements.txt for every client except the optional Claude agent:
 
 ```bash
-pip install -r requirements.txt          # repo root — includes anthropic[mcp]
+python -m pip install -r clients/requirements.txt
 ```
 
-Run everything **from the repo root** (client 01 launches the server by
-relative path):
+That command installs runtime dependencies plus the Anthropic SDK.
+
+## Generic inspector
 
 ```bash
-python clients/01-stdio-client.py
-
-python 02-remote-basic/server.py &                 # or docker compose up -d
-python clients/02-http-client.py
-
-export MCP_AUTH_TOKEN=$(openssl rand -hex 24)
-python 03-remote-auth/server.py &
-python clients/03-auth-client.py
-
-python 04-tool-features/server.py &
-python clients/04-advanced-client.py
-
-# the generic CLI works against anything:
 python clients/05-interactive-cli.py http://localhost:8102/mcp --list
 python clients/05-interactive-cli.py http://localhost:8102/mcp --call roll_dice --args '{"count": 3}'
+python clients/05-interactive-cli.py http://localhost:8108/mcp
 ```
 
-All HTTP clients honour `MCP_URL` if your server runs elsewhere.
+Interactive commands: `<tool-name> {JSON-object}`, `list`, `quit`. Non-object JSON
+is rejected. One-shot tool errors return a failing exit status. Export
+MCP_AUTH_TOKEN for protected servers; --token is also supported but exposes the
+value in the process command line.
 
-## The Claude-powered agent (06)
+connection.py owns and closes an httpx.AsyncClient and passes it to the SDK's
+streamable_http_client. Bearer headers belong on that HTTP client. Read timeouts
+allow up to five minutes for streamed tool responses.
 
-This is the one that turns everything into an *agent*: Claude receives your
-question, sees the MCP server's tools, and loops — plan → call tool → read
-result → call again → answer.
+## Optional Claude agent
+
+Set ANTHROPIC_API_KEY and ANTHROPIC_MODEL in your shell. Choose a model ID available
+in your account; no model name or adaptive-thinking capability is assumed.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...      # console.anthropic.com
-python 04-tool-features/server.py &
-python clients/06-claude-agent.py "Should I cycle in Manchester this weekend?"
+python clients/06-claude-agent.py "What's the weather in London?"
 ```
 
-Watch the output: Claude chains `find_city` → `get_weather` on its own, then
-answers with reasoning. Point `MCP_URL` (and `MCP_AUTH_TOKEN` if needed) at
-any other server — including your own apps — and it becomes *their* agent.
+The tool runner receives discovered tools and invokes them while answering. The
+loop is limited to ten iterations and 4,096 output tokens per model request;
+this is a request limit, not a guaranteed spend cap. Calls use your API account
+and can perform connected tools' mutations. Use a test instance for writable
+examples. Deterministic tests never make paid model calls.
 
-## Key client-side concepts
-
-- **The handshake** — every session starts with `initialize()`; the result
-  tells you the server's name and capabilities.
-- **Transport choice** — `stdio_client(StdioServerParameters(...))` when the
-  client owns the server process; `streamablehttp_client(url, headers=...)`
-  for remote servers (auth headers ride along here).
-- **Content blocks** — tool results are lists of typed blocks; check
-  `block.type == "text"` before reading `block.text`.
-- **Callbacks** — `ClientSession(..., logging_callback=...)` for server logs;
-  `call_tool(..., progress_callback=...)` for progress updates.
-- **Agentic loop** — you *can* write the request→execute→continue loop by
-  hand, but the Anthropic SDK's `tool_runner` + `async_mcp_tool` wrapper does
-  it in a few lines (example 06).
+Bare clients and servers do not load .env. See the [root guide](../README.md) for
+PowerShell/Bash setup and remote hosting requirements.

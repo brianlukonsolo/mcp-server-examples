@@ -1,7 +1,7 @@
 """02 — Remote basic (Streamable HTTP, no auth).
 
 The same idea as hello-world, but served over HTTP so *remote* clients —
-claude.ai connectors, ChatGPT connectors, Claude Code with --transport http —
+SDK clients or other compatible clients —
 can reach it. Also introduces the two other MCP primitives besides tools:
 resources (data the client can read) and prompts (reusable prompt templates).
 
@@ -11,22 +11,18 @@ Fine on localhost; see example 03 before exposing anything.
 Run:  python server.py   ->  http://localhost:8102/mcp
 """
 
-import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import create_server, run
+
+
 import random
+import math
 from datetime import datetime, timezone
 
-from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP(
-    "remote-basic",
-    instructions="A demo server with dice, time, and unit-conversion tools.",
-    host="0.0.0.0",
-    port=int(os.environ.get("PORT", "8102")),
-    # stateless_http means every request is self-contained — no server-side
-    # session to resume. This is the most compatible mode for hosted
-    # connectors (claude.ai, ChatGPT), which may not pin requests to one node.
-    stateless_http=True,
-)
+mcp = create_server("remote-basic", 8102)
 
 
 # ---------- tools ----------
@@ -49,6 +45,8 @@ def current_time() -> str:
 @mcp.tool()
 def convert_temperature(value: float, unit: str) -> dict:
     """Convert a temperature. unit is the unit of `value`: 'C' or 'F'."""
+    if not math.isfinite(value) or abs(value) > 1e100:
+        raise ValueError("Temperature must be finite and within +/-1e100")
     unit = unit.upper().strip()
     if unit == "C":
         return {"celsius": value, "fahrenheit": value * 9 / 5 + 32}
@@ -82,4 +80,4 @@ def brainstorm(topic: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    run(mcp, require_auth=False)

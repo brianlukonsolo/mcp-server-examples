@@ -9,23 +9,20 @@ Uses the free Open-Meteo API (no API key needed).
 Run:  python server.py  ->  http://localhost:8104/mcp
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import create_server, run, report_progress
+
+
 import asyncio
-import os
 from typing import Literal, Optional
 
-import httpx
-from mcp.server.fastmcp import Context, FastMCP
+from common.upstream import get_json, coordinates
+from common.storage import nonempty
+from mcp.server.fastmcp import Context
 
-mcp = FastMCP(
-    "tool-features",
-    instructions=(
-        "Demonstrates well-designed MCP tools: weather lookups via Open-Meteo, "
-        "text statistics, and a long-running task with progress reporting."
-    ),
-    host="0.0.0.0",
-    port=int(os.environ.get("PORT", "8104")),
-    stateless_http=True,
-)
+mcp = create_server("tool-features", 8104)
 
 OPEN_METEO_GEO = "https://geocoding-api.open-meteo.com/v1/search"
 OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
@@ -37,10 +34,11 @@ OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
 async def find_city(name: str, max_results: int = 5) -> list[dict]:
     """Look up cities by name; returns name, country, coordinates, population.
     Use this first to get coordinates for get_weather."""
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(OPEN_METEO_GEO, params={"name": name, "count": max_results})
-        r.raise_for_status()
-    results = r.json().get("results") or []
+    name = nonempty(name, "name")
+    if not 1 <= max_results <= 20:
+        raise ValueError("max_results must be 1-20")
+    data = await get_json(OPEN_METEO_GEO, {"name": name, "count": max_results})
+    results = data.get("results") or []
     return [
         {
             "name": c.get("name"),
@@ -64,8 +62,8 @@ async def get_weather(
     Returns current conditions plus a daily min/max/precipitation forecast."""
     if not 1 <= days <= 14:
         raise ValueError("days must be 1-14")
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(OPEN_METEO_FORECAST, params={
+    coordinates(latitude, longitude)
+    data = await get_json(OPEN_METEO_FORECAST, {
             "latitude": latitude,
             "longitude": longitude,
             "current": "temperature_2m,wind_speed_10m,relative_humidity_2m",
@@ -74,8 +72,6 @@ async def get_weather(
             "temperature_unit": units,
             "timezone": "auto",
         })
-        r.raise_for_status()
-    data = r.json()
     return {
         "current": data.get("current"),
         "daily": data.get("daily"),
@@ -90,6 +86,10 @@ async def get_weather(
 def text_stats(text: str, top_words: Optional[int] = None) -> dict:
     """Statistics for a piece of text: characters, words, lines, and
     optionally the most frequent words (top_words)."""
+    if len(text) > 100_000:
+        raise ValueError("text must be at most 100000 characters")
+    if top_words is not None and not 1 <= top_words <= 100:
+        raise ValueError("top_words must be 1-100")
     words = text.split()
     result = {
         "characters": len(text),
@@ -119,7 +119,7 @@ async def simulate_batch_job(items: int, ctx: Context) -> str:
     for i in range(items):
         await asyncio.sleep(0.15)  # pretend each item takes work
         # Progress bar in clients that render it:
-        await ctx.report_progress(i + 1, items)
+        await report_progress(ctx, i + 1, items)
         # Log messages the client can surface:
         if (i + 1) % 10 == 0:
             await ctx.info(f"Processed {i + 1}/{items} items")
@@ -127,4 +127,4 @@ async def simulate_batch_job(items: int, ctx: Context) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    run(mcp, require_auth=False)

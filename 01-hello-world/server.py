@@ -1,31 +1,33 @@
-"""01 — Hello World (stdio transport).
+"""01 — Hello World: start an HTTP server, then connect a client to /mcp."""
 
-The smallest possible MCP server: two tools, no configuration, no network.
-stdio transport means the AI client launches this script itself and talks to
-it over stdin/stdout — perfect for local tools in Claude Desktop / Claude Code.
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import create_server, run
 
-Run it via a client, e.g.:
-    claude mcp add hello -- python server.py
-"""
 
-from mcp.server.fastmcp import FastMCP
+import math
 
 # The name is what the AI sees this server called.
-mcp = FastMCP("hello-world")
+mcp = create_server("hello-world", 8101)
 
 
 @mcp.tool()
 def say_hello(name: str) -> str:
     """Greet someone by name."""
+    if not name.strip() or len(name) > 200:
+        raise ValueError("name must contain 1-200 characters")
     return f"Hello, {name}! Greetings from your first MCP server."
 
 
 @mcp.tool()
 def add(a: float, b: float) -> float:
     """Add two numbers together."""
-    return a + b
+    result = a + b
+    if not math.isfinite(result):
+        raise ValueError("Sum must be finite")
+    return result
 
 
 if __name__ == "__main__":
-    # No transport argument = stdio (the default).
-    mcp.run()
+    run(mcp, require_auth=False)

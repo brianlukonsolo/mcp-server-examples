@@ -11,25 +11,17 @@ Identical tool surface to a basic remote server, but every request must carry
 Run:  MCP_AUTH_TOKEN=<secret> python server.py  ->  http://localhost:8103/mcp
 """
 
-import hmac
-import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import create_server, run
+
+
 import secrets
 
-import uvicorn
-from mcp.server.fastmcp import FastMCP
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
 
-AUTH_TOKEN = os.environ.get("MCP_AUTH_TOKEN", "").strip()
-PORT = int(os.environ.get("PORT", "8103"))
 
-mcp = FastMCP(
-    "remote-auth",
-    instructions="A bearer-token protected demo server.",
-    host="0.0.0.0",
-    port=PORT,
-    stateless_http=True,
-)
+mcp = create_server("remote-auth", 8103)
 
 
 @mcp.tool()
@@ -50,32 +42,10 @@ def generate_password(length: int = 20) -> str:
 @mcp.tool()
 def secret_number(seed: str) -> int:
     """Derive a deterministic 6-digit number from a seed string."""
+    if len(seed) > 1000:
+        raise ValueError("seed must be at most 1000 characters")
     return int.from_bytes(seed.encode(), "big") % 900000 + 100000
 
 
-class BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Reject requests that don't present the expected bearer token."""
-
-    async def dispatch(self, request, call_next):
-        supplied = request.headers.get("authorization", "")
-        # compare_digest = constant-time comparison; == would leak timing info
-        if not hmac.compare_digest(supplied, f"Bearer {AUTH_TOKEN}"):
-            return JSONResponse(
-                {"error": "unauthorized", "detail": "Missing or invalid bearer token"},
-                status_code=401,
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return await call_next(request)
-
-
 if __name__ == "__main__":
-    if not AUTH_TOKEN:
-        raise SystemExit(
-            "Refusing to start without authentication.\n"
-            "Set MCP_AUTH_TOKEN (e.g. `openssl rand -hex 24`) and run again."
-        )
-    # Instead of mcp.run(), grab the underlying ASGI app so we can wrap it
-    # with middleware, then serve it ourselves.
-    app = mcp.streamable_http_app()
-    app.add_middleware(BearerAuthMiddleware)
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    run(mcp, require_auth=True)
