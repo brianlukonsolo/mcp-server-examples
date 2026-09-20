@@ -7,31 +7,26 @@ list for the model to read into context.
 Run:  python server.py  ->  http://localhost:8105/mcp
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import create_server, run
+
+
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, date
+from contextlib import contextmanager
+from common.storage import connect, nonempty
 from typing import Literal, Optional
 
-from mcp.server.fastmcp import FastMCP
 
 DB_PATH = os.environ.get("TASKS_DB", os.path.join(os.path.dirname(__file__), "tasks.db"))
 
-mcp = FastMCP(
-    "task-manager",
-    instructions=(
-        "A persistent to-do list. Add, list, complete, and delete tasks; "
-        "each task has a priority and optional due date."
-    ),
-    host="0.0.0.0",
-    port=int(os.environ.get("PORT", "8105")),
-    stateless_http=True,
-)
+mcp = create_server("task-manager", 8105)
 
 
-def db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
+SCHEMA = """
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
@@ -41,8 +36,13 @@ def db() -> sqlite3.Connection:
             created_at TEXT NOT NULL,
             completed_at TEXT
         )
-    """)
-    return conn
+    """
+
+
+@contextmanager
+def db():
+    with connect(DB_PATH, SCHEMA) as conn:
+        yield conn
 
 
 def row_to_dict(row: sqlite3.Row) -> dict:
@@ -58,12 +58,14 @@ def add_task(
     due_date: Optional[str] = None,
 ) -> dict:
     """Add a task. due_date is optional, format YYYY-MM-DD."""
-    if due_date:
-        datetime.strptime(due_date, "%Y-%m-%d")  # validate; raises on junk
+    title = nonempty(title, "title", 500)
+    if due_date is not None:
+        if date.fromisoformat(due_date).isoformat() != due_date:
+            raise ValueError("due_date must be YYYY-MM-DD")
     with db() as conn:
         cur = conn.execute(
             "INSERT INTO tasks (title, priority, due_date, created_at) VALUES (?, ?, ?, ?)",
-            (title.strip(), priority, due_date, datetime.now().isoformat(timespec="seconds")),
+            (title.strip(), priority, due_date, datetime.now(timezone.utc).isoformat(timespec="seconds")),
         )
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
     return row_to_dict(row)
@@ -73,9 +75,13 @@ def add_task(
 def list_tasks(
     status: Literal["all", "open", "done"] = "open",
     priority: Optional[Literal["low", "medium", "high"]] = None,
+    limit: int = 100,
+    offset: int = 0,
 ) -> list[dict]:
     """List tasks, optionally filtered by status and priority.
     Sorted: open before done, then high priority first, then oldest first."""
+    if not 1 <= limit <= 500 or offset < 0:
+        raise ValueError("limit must be 1-500 and offset nonnegative")
     query = "SELECT * FROM tasks WHERE 1=1"
     params: list = []
     if status == "open":
@@ -87,7 +93,8 @@ def list_tasks(
         params.append(priority)
     query += """ ORDER BY done,
         CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
-        created_at"""
+        created_at, id LIMIT ? OFFSET ?"""
+    params.extend([limit, offset])
     with db() as conn:
         rows = conn.execute(query, params).fetchall()
     return [row_to_dict(r) for r in rows]
@@ -99,7 +106,7 @@ def complete_task(task_id: int) -> dict:
     with db() as conn:
         cur = conn.execute(
             "UPDATE tasks SET done = 1, completed_at = ? WHERE id = ? AND done = 0",
-            (datetime.now().isoformat(timespec="seconds"), task_id),
+            (datetime.now(timezone.utc).isoformat(timespec="seconds"), task_id),
         )
         if cur.rowcount == 0:
             raise ValueError(f"No open task with id {task_id}")
@@ -120,7 +127,7 @@ def delete_task(task_id: int) -> dict:
 @mcp.tool()
 def task_stats() -> dict:
     """Counts of open/done tasks, split by priority, plus overdue count."""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with db() as conn:
         total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
         done = conn.execute("SELECT COUNT(*) FROM tasks WHERE done = 1").fetchone()[0]
@@ -140,9 +147,9 @@ def task_stats() -> dict:
 
 @mcp.resource("tasks://all")
 def all_tasks_resource() -> str:
-    """The full task list as readable text (for loading into context)."""
+    """The first 500 tasks as readable text (for loading into context)."""
     with db() as conn:
-        rows = conn.execute("SELECT * FROM tasks ORDER BY done, created_at").fetchall()
+        rows = conn.execute("SELECT * FROM tasks ORDER BY done, created_at, id LIMIT 500").fetchall()
     if not rows:
         return "No tasks yet."
     lines = []
@@ -154,4 +161,4 @@ def all_tasks_resource() -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    run(mcp, require_auth=False)

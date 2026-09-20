@@ -12,38 +12,28 @@ no key) with the trimmings a real deployment wants:
 Run:  MCP_AUTH_TOKEN=<secret> python server.py  ->  http://localhost:8106/mcp
 """
 
-import hmac
-import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import create_server, run
+
+
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict
+from common.upstream import get_json, coordinates
+from common.storage import nonempty
+from common.runtime import integer_env
 
-import httpx
-import uvicorn
-from mcp.server.fastmcp import FastMCP
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
 
-AUTH_TOKEN = os.environ.get("MCP_AUTH_TOKEN", "").strip()
-PORT = int(os.environ.get("PORT", "8106"))
-RATE_LIMIT_PER_MINUTE = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "30"))
-CACHE_TTL_SECONDS = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
+RATE_LIMIT_PER_MINUTE = integer_env("RATE_LIMIT_PER_MINUTE", 120)
+CACHE_TTL_SECONDS = integer_env("CACHE_TTL_SECONDS", 300)
 
-mcp = FastMCP(
-    "secure-gateway",
-    instructions=(
-        "A secured gateway to weather data (Open-Meteo). Look up places with "
-        "search_location, then fetch forecasts with get_forecast. Responses "
-        "are cached for a few minutes; requests are rate limited."
-    ),
-    host="0.0.0.0",
-    port=PORT,
-    stateless_http=True,
-)
+mcp = create_server("secure-gateway", 8106)
 
 # ---------- tiny TTL cache ----------
 
-_cache: dict[str, tuple[float, dict]] = {}
+_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+CACHE_MAX_ENTRIES = 256
 
 
 def cache_get(key: str):
@@ -55,6 +45,8 @@ def cache_get(key: str):
 
 
 def cache_put(key: str, value: dict):
+    if key not in _cache and len(_cache) >= CACHE_MAX_ENTRIES:
+        _cache.popitem(last=False)
     _cache[key] = (time.monotonic(), value)
 
 
@@ -64,15 +56,7 @@ async def fetch_json(url: str, params: dict) -> dict:
     cached = cache_get(key)
     if cached is not None:
         return cached
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(url, params=params)
-            r.raise_for_status()
-            data = r.json()
-    except httpx.TimeoutException:
-        raise RuntimeError("Upstream weather API timed out — try again shortly.")
-    except httpx.HTTPStatusError as e:
-        raise RuntimeError(f"Upstream weather API returned {e.response.status_code}.")
+    data = await get_json(url, params)
     cache_put(key, data)
     return data
 
@@ -82,6 +66,9 @@ async def fetch_json(url: str, params: dict) -> dict:
 @mcp.tool()
 async def search_location(query: str, max_results: int = 5) -> list[dict]:
     """Find places by name; returns coordinates to pass to get_forecast."""
+    query = nonempty(query, "query")
+    if not 1 <= max_results <= 20:
+        raise ValueError("max_results must be 1-20")
     data = await fetch_json(
         "https://geocoding-api.open-meteo.com/v1/search",
         {"name": query, "count": max_results},
@@ -96,6 +83,7 @@ async def search_location(query: str, max_results: int = 5) -> list[dict]:
 @mcp.tool()
 async def get_forecast(latitude: float, longitude: float, days: int = 3) -> dict:
     """Daily forecast (max/min temperature, precipitation, wind) for coordinates."""
+    coordinates(latitude, longitude)
     if not 1 <= days <= 14:
         raise ValueError("days must be 1-14")
     data = await fetch_json(
@@ -112,6 +100,8 @@ async def get_forecast(latitude: float, longitude: float, days: int = 3) -> dict
 @mcp.tool()
 def gateway_stats() -> dict:
     """Operational stats: cache entries and configured limits."""
+    for key in list(_cache):
+        cache_get(key)
     return {
         "cache_entries": len(_cache),
         "cache_ttl_seconds": CACHE_TTL_SECONDS,
@@ -119,55 +109,5 @@ def gateway_stats() -> dict:
     }
 
 
-# ---------- unauthenticated health endpoint ----------
-
-@mcp.custom_route("/health", methods=["GET"])
-async def health(_: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "service": "secure-gateway"})
-
-
-# ---------- middleware: auth + rate limiting ----------
-
-_requests_by_client: dict[str, deque] = defaultdict(deque)
-
-
-class GatewayMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # health probe stays open so load balancers/monitors can reach it
-        if request.url.path == "/health":
-            return await call_next(request)
-
-        supplied = request.headers.get("authorization", "")
-        if not hmac.compare_digest(supplied, f"Bearer {AUTH_TOKEN}"):
-            return JSONResponse(
-                {"error": "unauthorized"},
-                status_code=401,
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        # sliding-window rate limit per client IP
-        client = request.client.host if request.client else "unknown"
-        window = _requests_by_client[client]
-        now = time.monotonic()
-        while window and now - window[0] > 60:
-            window.popleft()
-        if len(window) >= RATE_LIMIT_PER_MINUTE:
-            return JSONResponse(
-                {"error": "rate_limited", "detail": f"Max {RATE_LIMIT_PER_MINUTE} requests/minute"},
-                status_code=429,
-                headers={"Retry-After": "60"},
-            )
-        window.append(now)
-
-        return await call_next(request)
-
-
 if __name__ == "__main__":
-    if not AUTH_TOKEN:
-        raise SystemExit(
-            "Refusing to start without authentication.\n"
-            "Set MCP_AUTH_TOKEN (e.g. `openssl rand -hex 24`) and run again."
-        )
-    app = mcp.streamable_http_app()
-    app.add_middleware(GatewayMiddleware)
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    run(mcp, require_auth=True)

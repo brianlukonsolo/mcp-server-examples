@@ -17,7 +17,7 @@ the free Open-Meteo weather API (no key required) plus some local tools.
 - **Structured results** — return dicts/lists, not prose; the model reasons
   better over structure.
 - **Progress + logging** — a tool taking a `ctx: Context` parameter can call
-  `await ctx.report_progress(done, total)` and `await ctx.info("...")` while it
+  `await report_progress(ctx, done, total)` and `await ctx.info("...")` while it
   runs, so long jobs aren't a silent wait.
 - **Clear errors** — validate early, raise `ValueError` with a message the
   model can act on.
@@ -37,3 +37,7 @@ and ask:
 > (watch it chain find_city → get_weather)
 
 > *"Run a batch job of 30 items"* (watch the progress updates)
+
+The shared progress helper associates notifications with the active POST request,
+so they reach stateless HTTP clients. Upstream inputs, response bodies and timeouts
+are bounded; network errors become explicit tool errors.

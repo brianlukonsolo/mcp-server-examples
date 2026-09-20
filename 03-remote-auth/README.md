@@ -1,6 +1,6 @@
 # 03 — Remote with bearer-token auth
 
-Example 02 with the front door locked. Same transport, but every request must
+Example 02 with the front door locked. Same transport, but every MCP request must
 present `Authorization: Bearer <token>`.
 
 ## Concepts introduced
@@ -8,10 +8,10 @@ present `Authorization: Bearer <token>`.
 - **`mcp.streamable_http_app()`** — instead of `mcp.run()`, get the raw ASGI
   app so you can add Starlette middleware, then serve it with uvicorn.
 - **Bearer-token middleware** — checks the `Authorization` header on every
-  request; 401 + `WWW-Authenticate: Bearer` otherwise.
+  MCP request (except the public `/health` probe); 401 + `WWW-Authenticate: Bearer` otherwise.
 - **Constant-time comparison** — `hmac.compare_digest`, never `==`, so an
   attacker can't measure how many characters matched.
-- **Fail-safe startup** — no token configured → the process exits instead of
+- **Fail-safe startup** — token shorter than 32 characters → the process exits instead of
   serving unauthenticated. Secure by default beats secure by memo.
 
 ## Run
@@ -28,8 +28,7 @@ claude mcp add --transport http remote-auth http://localhost:8103/mcp \
   --header "Authorization: Bearer $MCP_AUTH_TOKEN"
 ```
 
-claude.ai / ChatGPT connectors: tunnel the port, then put the token in the
-connector's auth/custom-header settings.
+For remote hosting and bearer-header client compatibility, see the [root guide](../README.md).
 
 ## Verify it's actually locked
 

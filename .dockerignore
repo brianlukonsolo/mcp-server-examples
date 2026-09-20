@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+.venv
+venv
+.idea
+.vscode
+__pycache__
+*.pyc
+*.db
+*.db-*
+data

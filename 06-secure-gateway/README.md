@@ -42,3 +42,8 @@ bike ride."*
 - Swap Open-Meteo for any API you actually use (add its key as another env var).
 - Put the server behind HTTPS (reverse proxy or tunnel) before exposing it.
 - For multi-user products, replace the static token with the MCP OAuth 2.1 flow.
+
+The cache is bounded to 256 entries. Expired entries are removed when queried or
+when stats are requested. The shared ingress defaults to 120 requests per minute
+per socket peer; it does not trust forwarded IP headers. Configure exact public
+hostnames before using a proxy (see the [root guide](../README.md)).

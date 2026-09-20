@@ -11,14 +11,14 @@ import asyncio
 import os
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from connection import remote_transport
 
 URL = os.environ.get("MCP_URL", "http://localhost:8102/mcp")
 
 
 async def main():
-    # streamablehttp_client yields (read, write, get_session_id)
-    async with streamablehttp_client(URL) as (read, write, _):
+    # remote_transport yields (read, write, get_session_id)
+    async with remote_transport(URL) as (read, write, _):
         async with ClientSession(read, write) as session:
             init = await session.initialize()
             print(f"Connected to: {init.serverInfo.name}")

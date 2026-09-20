@@ -12,7 +12,7 @@ import asyncio
 import os
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from connection import remote_transport
 from mcp.types import LoggingMessageNotificationParams
 
 URL = os.environ.get("MCP_URL", "http://localhost:8104/mcp")
@@ -24,7 +24,7 @@ async def on_log(params: LoggingMessageNotificationParams):
 
 
 async def on_progress(progress: float, total: float | None, message: str | None):
-    """Called for every ctx.report_progress the tool makes."""
+    """Called for every progress notification the tool sends."""
     if total:
         pct = int(progress / total * 100)
         bar = "#" * (pct // 5)
@@ -32,7 +32,7 @@ async def on_progress(progress: float, total: float | None, message: str | None)
 
 
 async def main():
-    async with streamablehttp_client(URL) as (read, write, _):
+    async with remote_transport(URL) as (read, write, _):
         # logging_callback receives server-side log notifications for the session
         async with ClientSession(read, write, logging_callback=on_log) as session:
             await session.initialize()

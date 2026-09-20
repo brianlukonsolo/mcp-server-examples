@@ -8,6 +8,7 @@ Claude Desktop runs internally, in ~40 lines you control.
 Requires:
     pip install "anthropic[mcp]"
     export ANTHROPIC_API_KEY=sk-ant-...   (from console.anthropic.com)
+    export ANTHROPIC_MODEL=<model-available-in-your-account>
 
 Start the weather server first:  python 04-tool-features/server.py
 Then, for example:
@@ -21,7 +22,7 @@ import sys
 from anthropic import AsyncAnthropic
 from anthropic.lib.tools.mcp import async_mcp_tool
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from connection import remote_transport
 
 MCP_URL = os.environ.get("MCP_URL", "http://localhost:8104/mcp")
 TOKEN = os.environ.get("MCP_AUTH_TOKEN", "").strip()  # only for authed servers
@@ -33,10 +34,12 @@ async def main():
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Set ANTHROPIC_API_KEY (get one at console.anthropic.com).")
 
-    claude = AsyncAnthropic()
+    model = os.getenv("ANTHROPIC_MODEL", "").strip()
+    if not model:
+        sys.exit("Set ANTHROPIC_MODEL to a model available in your account.")
     headers = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else None
 
-    async with streamablehttp_client(MCP_URL, headers=headers) as (read, write, _):
+    async with AsyncAnthropic() as claude, remote_transport(MCP_URL, headers=headers) as (read, write, _):
         async with ClientSession(read, write) as mcp_session:
             await mcp_session.initialize()
             mcp_tools = (await mcp_session.list_tools()).tools
@@ -47,9 +50,9 @@ async def main():
             # tool -> the SDK calls it on the MCP session -> the result goes
             # back to Claude -> repeat until Claude answers in plain text.
             runner = claude.beta.messages.tool_runner(
-                model="claude-opus-4-8",
-                max_tokens=16000,
-                thinking={"type": "adaptive"},
+                model=model,
+                max_iterations=10,
+                max_tokens=4096,
                 tools=[async_mcp_tool(t, mcp_session) for t in mcp_tools],
                 messages=[{"role": "user", "content": QUESTION}],
             )

@@ -1,5 +1,7 @@
-mcp>=1.12,<2
-httpx>=0.27
-uvicorn>=0.30
-# for clients/06-claude-agent.py (Claude driving MCP tools)
-anthropic[mcp]>=0.60
+# Tested runtime dependencies (Python 3.11+; CI and Docker use 3.12).
+mcp==1.28.1
+httpx==0.28.1
+uvicorn==0.51.0
+pydantic==2.13.4
+# SDK 1.28.1's lifespan annotation warns with pydantic-settings 2.15.
+pydantic-settings==2.14.2
